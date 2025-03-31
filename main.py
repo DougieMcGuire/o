@@ -52,5 +52,14 @@ async def get_voices():
     voices = await edge_tts.list_voices()
     return [{"name": voice["Name"], "locale": voice["Locale"]} for voice in voices]
 
+# Add a simple home route for testing
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({"status": "API is running", "endpoints": ["/generate-speech", "/list-voices"]})
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Get port from environment variable for Render compatibility
+    port = int(os.environ.get("PORT", 5000))
+    
+    # Host on 0.0.0.0 to make it accessible externally, turn off debug mode
+    app.run(host="0.0.0.0", port=port, debug=False)
