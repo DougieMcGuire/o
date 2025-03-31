@@ -1,46 +1,56 @@
-from flask import Flask, request, jsonify, send_from_directory
-import os
-import asyncio
+from flask import Flask, request, send_file, jsonify
 import edge_tts
+import asyncio
+import os
+import tempfile
+import time
 
 app = Flask(__name__)
 
-# Directory to store generated files
-OUTPUT_DIR = "static"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+@app.route('/generate-speech', methods=['POST'])
+def generate_speech():
+    try:
+        # Get JSON data from request
+        data = request.json
+        
+        # Extract text and voice from request
+        text = data.get('text')
+        voice = data.get('voice')
+        
+        if not text or not voice:
+            return jsonify({"error": "Missing 'text' or 'voice' parameter"}), 400
+        
+        # Generate a unique filename for this request
+        output_file = os.path.join(tempfile.gettempdir(), f"speech_{int(time.time())}.mp3")
+        
+        # Run the async TTS generation function
+        asyncio.run(generate_tts(text, voice, output_file))
+        
+        # Return the generated audio file
+        return send_file(output_file, mimetype="audio/mpeg", as_attachment=True)
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-# Generate audio using Edge TTS
-async def generate_audio(text, voice, output_path):
-    tts = edge_tts.Communicate(text, voice)
-    await tts.save(output_path)
+async def generate_tts(text, voice, output_file):
+    """Generate TTS audio file using Edge-TTS"""
+    communicate = edge_tts.Communicate(text, voice)
+    await communicate.save(output_file)
 
-@app.route('/tts', methods=['POST'])
-def tts():
-    data = request.json
-    text = data.get("text", "").strip()
-    voice = data.get("voice", "en-US-AriaNeural")  # Default voice
+@app.route('/list-voices', methods=['GET'])
+def list_voices():
+    """Endpoint to list all available voices"""
+    try:
+        # Run the async function to get voices
+        voices = asyncio.run(get_voices())
+        return jsonify(voices)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    if not text:
-        return jsonify({"error": "No text provided"}), 400
-
-    filename = f"tts_output.mp3"
-    output_path = os.path.join(OUTPUT_DIR, filename)
-
-    # Run the TTS generation asynchronously
-    asyncio.run(generate_audio(text, voice, output_path))
-
-    return jsonify({"audio_url": f"/static/{filename}"})
-
-# Endpoint to list available voices
-@app.route('/voices', methods=['GET'])
-async def list_voices():
+async def get_voices():
+    """Get list of available voices from Edge-TTS"""
     voices = await edge_tts.list_voices()
-    return jsonify(voices)
-
-# Serve static files (MP3)
-@app.route('/static/<filename>')
-def serve_static(filename):
-    return send_from_directory(OUTPUT_DIR, filename)
+    return [{"name": voice["Name"], "locale": voice["Locale"]} for voice in voices]
 
 if __name__ == '__main__':
     app.run(debug=True)
